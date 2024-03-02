@@ -1,99 +1,83 @@
 #importando as bibliotecas 
 import base64
-from flask import Flask,send_file,redirect
+from flask import Flask, send_file, redirect
 from io import BytesIO
 import openpyxl
 import os
-import  requests
+import requests
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor
 
-app=Flask(__name__)
-
+app = Flask(__name__)
 #definido a classe pokemon
 class Pokemon:
-    def __init__(self,id,name,types,sprites):
-        self.id=id
-        self.name=name
-        self.types=types
-        self.sprites=sprites
-
+    def __init__(self, id, name, types, sprites):
+        self.id = id
+        self.name = name
+        self.types = types
+        self.sprites = sprites
 #Função para obter dados dos pokemomns 
-def obter_dados_pokemons(id_pokemon):
-    url=f'https://pokeapi.co/api/v2/pokemon/{id_pokemon}'
-    resposta=requests.get(url)
-
-    if resposta.status_code==200:
-        dados_pokemons=resposta.json()
+def obter_dados_pokemon(id_pokemon):
+    url = f'https://pokeapi.co/api/v2/pokemon/{id_pokemon}'
+    resposta = requests.get(url)
+    
+    if resposta.status_code == 200:
+        dados_pokemons = resposta.json()
         return dados_pokemons
-    
     else:
-        print(f'Falha ao obter  dados do Pokemon com ID ')
-    
-#Função para baixar é salvar imagem do pokemon 
-def baixar_salvar_imagem(url,nome_arquivo):
-    resposta=requests.get(url)
+        print(f'Falha ao obter dados para o Pokémon com ID {id_pokemon}')
+#Função para baixar é salvar imagem do pokemon
+def baixar_salvar_imagem(url, nome_arquivo):
+    resposta = requests.get(url)
 
-    if resposta.status_code==200:
-        imagem=Image.open(BytesIO(resposta.content))
+    if resposta.status_code == 200:
+        imagem = Image.open(BytesIO(resposta.content))
         imagem.save(nome_arquivo)
         print(f'Imagem salva: {nome_arquivo}')
-    
     else:
-        print(f'Falha  ao salvar imagem da URL: {url}')
+        print(f'Falha ao salvar imagem da Url: {url}')
 #FunÇão para adicionar imagem salva no excel 
-def adicionar_imagem_excel(planilha,linha,coluna,imagem_local):
-    imagem_local_absoluto=os.path.abspath(imagem_local)
-    img=openpyxl.drawing.image.Image(imagem_local_absoluto)
-    img.width=60
-    img.heigth=80 
-    planilha.add_image(img,f'{coluna}{linha}')
-
-##FunÇão para processar as listas de ids
-def processar_listas_ids(listas_ids):
-    dados_pokemons_organizada=[]
-
-    #Usado ThreadPoolExecutor para baixar e salvar imagens em paralelo
-    with ThreadPoolExecutor() as executor:
-        #Função auxiliar para processar cada ID
-        def processar_id(id_pokemon):
-            dados_pokemons=obter_dados_pokemons(id_pokemon)
-
-            if dados_pokemons:
-                nome = dados_pokemons['name']
-                identificador = dados_pokemons['id']
-                tipos = [tipo['type']['name'] for tipo in dados_pokemons['types']]
-                imagem_url = dados_pokemons['sprites']['front_default'] if 'sprites' in dados_pokemons else ''
-
-                nome_arquivo_imagem = f'{identificador}_{nome}.png'
-                baixar_salvar_imagem(imagem_url, nome_arquivo_imagem)
-
-
-                pokemon=Pokemon(id=identificador,name=nome,types=tipos,sprites=imagem_url)
-                dados_pokemons_organizada.append(pokemon)
-        #Mapeando  os IDS  para função  processar  id usando threads 
-        executor.map(processar_id,listas_ids)
-    return dados_pokemons_organizada
+def adicionar_imagem_excel(planilha, linha, coluna, imagem_local):
+    imagem_local_absoluto = os.path.abspath(imagem_local)
+    img = openpyxl.drawing.image.Image(imagem_local_absoluto)
+    img.width = 32
+    img.height = 32
+    planilha.add_image(img, f'{coluna}{linha}')
 
 @app.route('/')
 def raiz():
-    return redirect ('/pokemon')
+    return redirect('/pokemon')
 
-@app.route('/pokemon',methods=['GET'])
+@app.route('/pokemon', methods=['GET'])
 def obter_excel_base64():
-    lista_ids_pokemon=[1,2,3,5,6]
-    dados_organizados=processar_listas_ids(lista_ids_pokemon)
+    lista_ids_pokemon = [1, 2, 3, 5, 6]
+    pokemons = []
 
-    #Criando um arquivo Excel
-    arquivo_excel=openpyxl.Workbook()
-    planilha=arquivo_excel.active
+    # Processando os IDs sequencialmente
+    for id_pokemon in lista_ids_pokemon:
+        dados_pokemons = obter_dados_pokemon(id_pokemon)
 
-    #Adicionando cabeçalho 
-    cabecalho=['Name','ID','Types','Sprite']
+        if dados_pokemons:
+            nome = dados_pokemons['name']
+            identificador = dados_pokemons['id']
+            tipos = [tipo['type']['name'] for tipo in dados_pokemons['types']]
+            imagem_url = dados_pokemons['sprites']['front_default'] if 'sprites' in dados_pokemons else ''
+
+            nome_arquivo_imagem = f'{identificador}_{nome}.png'
+            baixar_salvar_imagem(imagem_url, nome_arquivo_imagem)
+
+            pokemon = Pokemon(id=identificador, name=nome, types=tipos, sprites=imagem_url)
+            pokemons.append(pokemon)
+
+    # Criando um arquivo Excel
+    arquivo_excel = openpyxl.Workbook()
+    planilha = arquivo_excel.active
+
+    # Adicionando cabeçalho
+    cabecalho = ["Name", "ID", "Types", "Sprite"]
     planilha.append(cabecalho)
 
-    #Prechendo os dados  na planilha do Excel 
-    for i, pokemon in enumerate(dados_organizados, start=2):  # Começando da linha 2 para incluir cabeçalho
+    # Preenchendo os dados na planilha
+    for i, pokemon in enumerate(pokemons, start=2):  # Começando da linha 2 para incluir cabeçalho
         linha = [pokemon.name, pokemon.id, ', '.join(pokemon.types)]
         planilha.append(linha)
 
